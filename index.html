@@ -8,6 +8,7 @@
 <!-- Leaflet Map -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <!-- Firebase -->
 <script type="module">
@@ -485,6 +486,63 @@ window.dispatchEvent(new Event('firebase-ready'));
   @media (max-width: 900px) and (orientation: landscape) {
     #sidebar { max-height: 88dvh; }
   }
+
+  /* ── LIGHTBOX ── */
+  #lightbox {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.93);
+    z-index: 9000;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    gap: 14px;
+  }
+  #lightbox.show { display: flex; }
+  #lightbox-img {
+    max-width: 96vw;
+    max-height: 72dvh;
+    border-radius: 10px;
+    object-fit: contain;
+    box-shadow: 0 8px 40px rgba(0,0,0,.8);
+    cursor: zoom-in;
+  }
+  #lightbox-counter { font-size:.78rem; color:var(--muted); }
+  #lightbox-toolbar {
+    display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+  }
+  #lightbox-toolbar button {
+    padding: 8px 18px; border-radius: 8px; border: none;
+    font-size: .82rem; font-weight: 700; cursor: pointer;
+  }
+  .lb-close { background: var(--surface2); color: var(--text); border: 1px solid var(--border) !important; }
+  .lb-prev, .lb-next { background: var(--surface2); color: var(--text); border: 1px solid var(--border) !important; font-size:1rem; }
+  .lb-dl { background: var(--blue); color: #fff; }
+  /* thumb clickable */
+  .thumb-wrap img { cursor: pointer; }
+  /* confirm dialog */
+  #confirm-box {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.7);
+    z-index: 9500;
+    align-items: center; justify-content: center;
+  }
+  #confirm-box.show { display: flex; }
+  #confirm-inner {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    max-width: 320px;
+    width: 90%;
+    text-align: center;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  #confirm-inner p { font-size:.88rem; line-height:1.5; color: var(--text); }
+  #confirm-inner .confirm-btns { display:flex; gap:10px; }
+  #confirm-inner .confirm-btns button { flex:1; }
 </style>
 </head>
 <body>
@@ -627,9 +685,10 @@ window.dispatchEvent(new Event('firebase-ready'));
           <div class="photos-preview" id="photos-preview"></div>
         </div>
 
-        <!-- Salvar -->
+        <!-- Salvar / Excluir -->
         <button class="btn btn-primary" onclick="saveVistoria()" id="btn-save">💾 Salvar Vistoria</button>
         <div id="save-status" style="font-size:.72rem;color:var(--muted);text-align:center;min-height:16px"></div>
+        <button class="btn btn-danger" id="btn-delete" style="display:none" onclick="deleteVistoria()">🗑 Excluir esta Vistoria</button>
       </div>
     </div>
 
@@ -637,13 +696,15 @@ window.dispatchEvent(new Event('firebase-ready'));
     <div class="panel" id="panel-export">
       <div class="export-info">
         <strong>📊 Exportar base completa</strong><br><br>
-        Exporta todas as unidades consumidoras com seus respectivos status, dados de vistoria, prospector, fases verificadas e observações em formato <strong>CSV</strong> ou <strong>JSON</strong>.
-        <br><br>
-        Os dados são carregados em tempo real do Firebase, sempre atualizados.
+        Exporte os dados das vistorias em CSV, JSON ou gere um <strong>Relatório PDF</strong> completo com todas as informações e fotos.
       </div>
       <div id="export-summary" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-size:.78rem;line-height:1.8;"></div>
+      <button class="btn" style="background:#c0392b;color:#fff;font-size:.85rem" onclick="exportPDF()">📄 Relatório PDF Completo</button>
       <button class="btn btn-export" onclick="exportCSV()">⬇ Exportar CSV</button>
       <button class="btn" style="background:var(--blue);color:#fff" onclick="exportJSON()">⬇ Exportar JSON</button>
+      <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
+        <button class="btn btn-danger" style="width:100%" onclick="resetAllVistorias()">🗑 Limpar TODAS as vistorias</button>
+      </div>
     </div>
   </div>
 </div>
@@ -887,6 +948,7 @@ function openFormForUC(uc) {
   openSidebarIfMobile();
   document.getElementById('form-empty').style.display = 'none';
   document.getElementById('form-content').style.display = 'flex';
+  document.getElementById('btn-delete').style.display = vistorias[uc.instalacao] ? 'block' : 'none';
   document.getElementById('form-title').textContent = `UC #${uc.instalacao}`;
   document.getElementById('form-subtitle').textContent = `${uc.bairro} · Medidor: ${uc.medidor}`;
   loadFormData(uc);
@@ -914,13 +976,9 @@ function loadFormData(uc) {
     document.getElementById('chk-'+k).checked = !!fases[k.replace('-','')];
   });
   if (v.tipo_avaria) document.getElementById('f-tipo-avaria').value = v.tipo_avaria;
-  // show photos
-  if (v.fotos && v.fotos.length) {
-    const prev = document.getElementById('photos-preview');
-    prev.innerHTML = v.fotos.map((url, i) =>
-      `<div class="thumb-wrap"><img src="${url}" onerror="this.src='data:image/svg+xml,<svg xmlns=\\"http://www.w3.org/2000/svg\\" width=\\"72\\" height=\\"72\\"><rect width=\\"72\\" height=\\"72\\" fill=\\"%23333\\"/><text x=\\"36\\" y=\\"40\\" text-anchor=\\"middle\\" fill=\\"%23888\\" font-size=\\"10\\">Foto</text></svg>'"></div>`
-    ).join('');
-  }
+  // show photos — renderPhotoPreview handles it
+  pendingPhotos = [];
+  renderPhotoPreview();
 }
 
 function selectStatus(s) {
@@ -990,19 +1048,22 @@ function addPhotos(input) {
 function renderPhotoPreview() {
   const prev = document.getElementById('photos-preview');
   prev.innerHTML = '';
-  // Fotos já salvas (URLs do Cloudinary)
   const saved = (vistorias[currentUC?.instalacao]?.fotos || []);
-  saved.forEach(url => {
+  const allUrls = [...saved, ...pendingPhotos.map(p => p.b64)];
+  // Fotos já salvas (URLs Cloudinary) — clicáveis
+  saved.forEach((url, i) => {
     const d = document.createElement('div');
     d.className = 'thumb-wrap';
-    d.innerHTML = `<img src="${url}" onerror="this.style.opacity='.3'">`;
+    d.innerHTML = `<img src="${url}" onerror="this.style.opacity='.3'" title="Clique para ampliar">`;
+    d.querySelector('img').onclick = () => openLightbox(allUrls, i);
     prev.appendChild(d);
   });
-  // Fotos novas pendentes (com botão remover)
+  // Fotos novas pendentes (com botão remover + preview)
   pendingPhotos.forEach((photo, i) => {
     const d = document.createElement('div');
     d.className = 'thumb-wrap';
-    d.innerHTML = `<img src="${photo.b64}"><button class="del-photo" onclick="removePhoto(${i})">✕</button>`;
+    d.innerHTML = `<img src="${photo.b64}" title="Clique para ampliar"><button class="del-photo" onclick="removePhoto(${i})">✕</button>`;
+    d.querySelector('img').onclick = () => openLightbox(allUrls, saved.length + i);
     prev.appendChild(d);
   });
 }
@@ -1247,6 +1308,314 @@ if (window._firebaseReady) {
   renderList();
   updateStats();
 }
+
+
+// ══════════════════════════════════════
+// LIGHTBOX
+// ══════════════════════════════════════
+let lbPhotos = [];
+let lbIndex = 0;
+
+function openLightbox(photos, idx) {
+  lbPhotos = photos;
+  lbIndex = idx;
+  lbShow();
+  document.getElementById('lightbox').classList.add('show');
+  document.addEventListener('keydown', lbKeyHandler);
+}
+
+function lbShow() {
+  document.getElementById('lightbox-img').src = lbPhotos[lbIndex];
+  document.getElementById('lightbox-counter').textContent = `Foto ${lbIndex + 1} de ${lbPhotos.length}`;
+}
+
+function lbNav(dir) {
+  lbIndex = (lbIndex + dir + lbPhotos.length) % lbPhotos.length;
+  lbShow();
+}
+
+function lbClose() {
+  document.getElementById('lightbox').classList.remove('show');
+  document.getElementById('lightbox-img').src = '';
+  document.removeEventListener('keydown', lbKeyHandler);
+}
+
+function lbBgClick(e) {
+  if (e.target.id === 'lightbox') lbClose();
+}
+
+function lbKeyHandler(e) {
+  if (e.key === 'ArrowLeft') lbNav(-1);
+  if (e.key === 'ArrowRight') lbNav(1);
+  if (e.key === 'Escape') lbClose();
+}
+
+async function lbDownload() {
+  const url = lbPhotos[lbIndex];
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `foto_${lbIndex + 1}.jpg`;
+    a.click();
+  } catch(e) {
+    // fallback: open in new tab
+    window.open(url, '_blank');
+  }
+}
+
+// ══════════════════════════════════════
+// CONFIRM DIALOG
+// ══════════════════════════════════════
+let _confirmResolve = null;
+function confirmResolve(val) {
+  document.getElementById('confirm-box').classList.remove('show');
+  if (_confirmResolve) _confirmResolve(val);
+}
+
+function showConfirm(msg, okLabel = 'Confirmar', danger = true) {
+  return new Promise(resolve => {
+    _confirmResolve = resolve;
+    document.getElementById('confirm-msg').textContent = msg;
+    document.getElementById('confirm-ok-btn').textContent = okLabel;
+    document.getElementById('confirm-ok-btn').style.background = danger ? 'var(--red)' : 'var(--green)';
+    document.getElementById('confirm-box').classList.add('show');
+  });
+}
+
+// ══════════════════════════════════════
+// DELETE VISTORIA
+// ══════════════════════════════════════
+async function deleteVistoria() {
+  if (!currentUC) return;
+  const ok = await showConfirm(`Excluir a vistoria da UC #${currentUC.instalacao}? Esta ação não pode ser desfeita.`, '🗑 Excluir');
+  if (!ok) return;
+  try {
+    const db = window._firebaseDB;
+    const ref = window._firebaseRef;
+    const set = window._firebaseSet;
+    await set(ref(db, `vistorias/${currentUC.instalacao}`), null);
+    showNotif('🗑 Vistoria excluída.');
+    switchTab('list');
+    if (window.innerWidth <= 900 && sidebarOpen) toggleSidebar();
+    currentUC = null;
+    document.getElementById('form-content').style.display = 'none';
+    document.getElementById('form-empty').style.display = 'block';
+  } catch(e) {
+    showNotif('Erro ao excluir: ' + e.message, true);
+  }
+}
+
+async function resetAllVistorias() {
+  const ok = await showConfirm('Limpar TODAS as vistorias do sistema? Isso apaga tudo permanentemente!', '🗑 Limpar tudo');
+  if (!ok) return;
+  try {
+    const db = window._firebaseDB;
+    const ref = window._firebaseRef;
+    const set = window._firebaseSet;
+    await set(ref(db, 'vistorias'), null);
+    showNotif('Todas as vistorias foram removidas.');
+  } catch(e) {
+    showNotif('Erro: ' + e.message, true);
+  }
+}
+
+// ══════════════════════════════════════
+// PDF REPORT
+// ══════════════════════════════════════
+async function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const W = 210, margin = 14;
+  let y = 0;
+
+  function checkPage(need = 10) {
+    if (y + need > 280) { doc.addPage(); y = 14; }
+  }
+
+  function header() {
+    doc.setFillColor(13, 17, 23);
+    doc.rect(0, 0, W, 22, 'F');
+    doc.setTextColor(240, 165, 0);
+    doc.setFontSize(16); doc.setFont('helvetica', 'bold');
+    doc.text('FieldCheck — Relatório de Vistorias', margin, 14);
+    doc.setTextColor(180, 180, 180);
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+    doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, W - margin, 14, { align: 'right' });
+    y = 30;
+  }
+
+  header();
+
+  // Summary
+  let ok = 0, av = 0, pend = 0;
+  BASE_UC.forEach(uc => {
+    const v = vistorias[uc.instalacao];
+    if (!v) pend++; else if (v.status === 'ok') ok++; else if (v.status === 'avaria') av++; else pend++;
+  });
+
+  doc.setFillColor(28, 34, 48);
+  doc.roundedRect(margin, y, W - margin*2, 18, 3, 3, 'F');
+  doc.setTextColor(240, 165, 0); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+  doc.text('RESUMO GERAL', margin + 4, y + 7);
+  doc.setTextColor(60, 200, 80); doc.text(`✔ OK: ${ok}`, margin + 50, y + 7);
+  doc.setTextColor(220, 60, 50); doc.text(`✖ Avaria: ${av}`, margin + 90, y + 7);
+  doc.setTextColor(200, 160, 30); doc.text(`⏳ Pendente: ${pend}`, margin + 135, y + 7);
+  doc.setTextColor(150, 150, 150);
+  doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+  doc.text(`Total: ${BASE_UC.length} UCs | Cobertura: ${Math.round((ok+av)/BASE_UC.length*100)}%`, margin + 4, y + 14);
+  y += 24;
+
+  // Visited UCs
+  const visited = BASE_UC.filter(uc => vistorias[uc.instalacao]);
+  if (visited.length === 0) {
+    doc.setTextColor(150,150,150); doc.setFontSize(10);
+    doc.text('Nenhuma vistoria registrada ainda.', margin, y + 10);
+  }
+
+  for (const uc of visited) {
+    const v = vistorias[uc.instalacao];
+    checkPage(60);
+
+    // UC header bar
+    const barColor = v.status === 'ok' ? [30,100,50] : v.status === 'avaria' ? [120,30,30] : [100,80,20];
+    doc.setFillColor(...barColor);
+    doc.roundedRect(margin, y, W - margin*2, 8, 2, 2, 'F');
+    doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+    const statusTxt = v.status === 'ok' ? '✔ OK' : v.status === 'avaria' ? '✖ AVARIA' : '⏳ PENDENTE';
+    doc.text(`UC #${uc.instalacao}  |  ${uc.bairro}  |  Medidor: ${uc.medidor}  |  ${statusTxt}`, margin + 3, y + 5.5);
+    y += 10;
+
+    // Info grid
+    doc.setFillColor(28, 34, 48);
+    doc.rect(margin, y, W - margin*2, 24, 'F');
+    doc.setTextColor(140,150,170); doc.setFontSize(7.5); doc.setFont('helvetica', 'normal');
+    const col1 = margin + 3, col2 = margin + 65, col3 = margin + 125;
+    doc.text('Prospector:', col1, y + 5);
+    doc.setTextColor(220,230,240);
+    doc.text(v.prospector || '—', col1 + 22, y + 5);
+    doc.setTextColor(140,150,170);
+    doc.text('Data da visita:', col2, y + 5);
+    doc.setTextColor(220,230,240);
+    doc.text(v.data_visita || '—', col2 + 25, y + 5);
+    doc.setTextColor(140,150,170);
+    doc.text('Leitura (kWh):', col3, y + 5);
+    doc.setTextColor(220,230,240);
+    doc.text(v.leitura || '—', col3 + 25, y + 5);
+
+    if (v.tipo_avaria) {
+      doc.setTextColor(140,150,170); doc.text('Tipo avaria:', col1, y + 11);
+      doc.setTextColor(240,80,80); doc.text(v.tipo_avaria, col1 + 22, y + 11);
+    }
+
+    // Fases
+    const f = v.fases || {};
+    const faseLabels = [['A',f.fasea],['B',f.faseb],['C',f.fasec],['N',f.neutro],['Aterr.',f.aterramento],['Lacre',f.lacre],['Caixa',f.caixa],['Leit.',f.leitura]];
+    let fx = col1;
+    doc.setFontSize(7);
+    faseLabels.forEach(([lbl, ok]) => {
+      doc.setFillColor(ok ? 30 : 80, ok ? 80 : 30, ok ? 40 : 30);
+      doc.roundedRect(fx, y + 14, 18, 6, 1, 1, 'F');
+      doc.setTextColor(ok ? 100 : 180, ok ? 220 : 80, ok ? 100 : 80);
+      doc.text(lbl, fx + 9, y + 18.2, { align: 'center' });
+      fx += 20;
+    });
+
+    // Obs
+    if (v.obs) {
+      doc.setTextColor(180,190,200); doc.setFontSize(7.5);
+      const lines = doc.splitTextToSize(`Obs: ${v.obs}`, W - margin*2 - 6);
+      doc.text(lines, col1, y + 22);
+    }
+    y += 26;
+
+    // Photos — embed up to 4
+    if (v.fotos && v.fotos.length > 0) {
+      checkPage(50);
+      doc.setTextColor(140,150,170); doc.setFontSize(7.5);
+      doc.text(`Fotos (${v.fotos.length}):`, margin, y + 4);
+      y += 6;
+      const maxPhotos = Math.min(v.fotos.length, 4);
+      const imgW = (W - margin*2 - (maxPhotos-1)*3) / maxPhotos;
+      const imgH = imgW * 0.75;
+      checkPage(imgH + 4);
+      for (let i = 0; i < maxPhotos; i++) {
+        try {
+          const imgData = await loadImageAsBase64(v.fotos[i]);
+          const x = margin + i * (imgW + 3);
+          doc.addImage(imgData, 'JPEG', x, y, imgW, imgH);
+        } catch(e) { /* skip */ }
+      }
+      y += imgH + 4;
+    }
+
+    y += 4;
+    // divider
+    doc.setDrawColor(50,55,65);
+    doc.line(margin, y, W - margin, y);
+    y += 5;
+  }
+
+  // Unvisited list
+  const unvisited = BASE_UC.filter(uc => !vistorias[uc.instalacao]);
+  if (unvisited.length > 0) {
+    checkPage(20);
+    doc.setFillColor(30,30,40);
+    doc.rect(margin, y, W - margin*2, 8, 'F');
+    doc.setTextColor(200,200,200); doc.setFontSize(9); doc.setFont('helvetica','bold');
+    doc.text(`UCs não visitadas (${unvisited.length})`, margin+3, y+5.5);
+    y += 10;
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(160,160,160);
+    unvisited.forEach(uc => {
+      checkPage(6);
+      doc.text(`#${uc.instalacao}  ${uc.bairro}  ${uc.medidor}`, margin+3, y);
+      y += 5;
+    });
+  }
+
+  doc.save(`relatorio_vistorias_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.pdf`);
+  showNotif('📄 PDF gerado com sucesso!');
+}
+
+function loadImageAsBase64(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width; canvas.height = img.height;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
 </script>
+
+<!-- LIGHTBOX -->
+<div id="lightbox" onclick="lbBgClick(event)">
+  <div id="lightbox-counter"></div>
+  <img id="lightbox-img" src="" alt="foto">
+  <div id="lightbox-toolbar">
+    <button class="lb-prev" onclick="lbNav(-1)">◀ Anterior</button>
+    <button class="lb-dl" onclick="lbDownload()">⬇ Baixar Foto</button>
+    <button class="lb-next" onclick="lbNav(1)">Próxima ▶</button>
+    <button class="lb-close" onclick="lbClose()">✕ Fechar</button>
+  </div>
+</div>
+
+<!-- CONFIRM -->
+<div id="confirm-box">
+  <div id="confirm-inner">
+    <p id="confirm-msg">Tem certeza?</p>
+    <div class="confirm-btns">
+      <button class="btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="confirmResolve(false)">Cancelar</button>
+      <button class="btn btn-danger" id="confirm-ok-btn" onclick="confirmResolve(true)">Confirmar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
