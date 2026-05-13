@@ -934,14 +934,33 @@ function selectStatus(s) {
   document.getElementById('field-avaria').style.display = s === 'avaria' ? 'block' : 'none';
 }
 
-// Comprime imagem para max 800px e qualidade 0.72
+// Comprime imagem para max 480px e qualidade 0.5 — cabe no Realtime DB
+// ── CLOUDINARY UPLOAD ──
+const CLOUDINARY_CLOUD = 'dcb4vlgi8';
+const CLOUDINARY_PRESET = 'fieldcheck';
+
+async function uploadToCloudinary(b64) {
+  const formData = new FormData();
+  formData.append('file', b64);
+  formData.append('upload_preset', CLOUDINARY_PRESET);
+  formData.append('folder', 'vistorias');
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
+    method: 'POST',
+    body: formData
+  });
+  if (!res.ok) throw new Error('Cloudinary error ' + res.status);
+  const data = await res.json();
+  return data.secure_url;
+}
+
+// Comprime imagem para max 1024px antes de enviar
 function compressImage(file) {
   return new Promise(resolve => {
     const reader = new FileReader();
     reader.onload = e => {
       const img = new Image();
       img.onload = () => {
-        const MAX = 800;
+        const MAX = 1024;
         let w = img.width, h = img.height;
         if (w > MAX || h > MAX) {
           if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
@@ -950,7 +969,7 @@ function compressImage(file) {
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', 0.72));
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
       };
       img.src = e.target.result;
     };
@@ -962,7 +981,7 @@ function addPhotos(input) {
   const files = Array.from(input.files);
   files.forEach(async file => {
     const compressed = await compressImage(file);
-    pendingPhotos.push(compressed);
+    pendingPhotos.push({ b64: compressed, name: file.name });
     renderPhotoPreview();
   });
   input.value = '';
@@ -971,7 +990,7 @@ function addPhotos(input) {
 function renderPhotoPreview() {
   const prev = document.getElementById('photos-preview');
   prev.innerHTML = '';
-  // Fotos já salvas no DB
+  // Fotos já salvas (URLs do Cloudinary)
   const saved = (vistorias[currentUC?.instalacao]?.fotos || []);
   saved.forEach(url => {
     const d = document.createElement('div');
@@ -980,10 +999,10 @@ function renderPhotoPreview() {
     prev.appendChild(d);
   });
   // Fotos novas pendentes (com botão remover)
-  pendingPhotos.forEach((b64, i) => {
+  pendingPhotos.forEach((photo, i) => {
     const d = document.createElement('div');
     d.className = 'thumb-wrap';
-    d.innerHTML = `<img src="${b64}"><button class="del-photo" onclick="removePhoto(${i})">✕</button>`;
+    d.innerHTML = `<img src="${photo.b64}"><button class="del-photo" onclick="removePhoto(${i})">✕</button>`;
     prev.appendChild(d);
   });
 }
@@ -998,16 +1017,11 @@ async function saveVistoria() {
   if (!selectedStatus) { showNotif('Selecione um status antes de salvar.', true); return; }
 
   const btn = document.getElementById('btn-save');
+  const statusEl = document.getElementById('save-status');
   btn.textContent = '⏳ Salvando…';
   btn.disabled = true;
-  document.getElementById('save-status').textContent = '';
+  statusEl.textContent = '';
 
-  const fases = {};
-  ['fasea','faseb','fasec','neutro','aterramento','lacre','caixa','leitura'].forEach(k => {
-    const el = document.getElementById('chk-' + k.replace('fase','fase-').replace('aterr','aterr').replace('lacr','lacr').replace('caix','caix').replace('leit','leit'));
-    if (el) fases[k] = el.checked;
-  });
-  // rebuild properly
   const faseMap = {
     fasea: document.getElementById('chk-fase-a').checked,
     faseb: document.getElementById('chk-fase-b').checked,
@@ -1019,29 +1033,23 @@ async function saveVistoria() {
     leitura: document.getElementById('chk-leitura').checked,
   };
 
-  // Fotos: tenta Storage, fallback base64 comprimido no Realtime DB
+  // Upload fotos para Cloudinary
   let fotoUrls = [...(vistorias[currentUC.instalacao]?.fotos || [])];
   if (pendingPhotos.length > 0) {
-    document.getElementById('save-status').textContent = '📷 Enviando fotos…';
-    let storageOk = false;
-    try {
-      const storage = window._firebaseStorage;
-      const sRef = window._firebaseSRef;
-      const uploadString = window._firebaseUploadString;
-      const getDownloadURL = window._firebaseGetDownloadURL;
-      for (let i = 0; i < pendingPhotos.length; i++) {
-        const path = `vistorias/${currentUC.instalacao}/foto_${Date.now()}_${i}.jpg`;
-        const storageRef = sRef(storage, path);
-        const snap = await uploadString(storageRef, pendingPhotos[i], 'data_url');
-        const url = await getDownloadURL(snap.ref);
+    for (let i = 0; i < pendingPhotos.length; i++) {
+      statusEl.textContent = `📷 Enviando foto ${i + 1} de ${pendingPhotos.length}…`;
+      try {
+        const url = await uploadToCloudinary(pendingPhotos[i].b64);
         fotoUrls.push(url);
+      } catch(e) {
+        showNotif(`Erro na foto ${i+1}: ${e.message}`, true);
+        btn.textContent = '💾 Salvar Vistoria';
+        btn.disabled = false;
+        statusEl.textContent = '';
+        return;
       }
-      storageOk = true;
-    } catch(e) {
-      // Storage sem permissão — salva base64 comprimido direto no DB
-      pendingPhotos.forEach(b64 => fotoUrls.push(b64));
     }
-    document.getElementById('save-status').textContent = '';
+    statusEl.textContent = '';
   }
 
   const payload = {
@@ -1069,7 +1077,6 @@ async function saveVistoria() {
     await set(ref(db, `vistorias/${currentUC.instalacao}`), payload);
     pendingPhotos = [];
     showNotif('✅ Vistoria salva com sucesso!');
-    // Volta para lista e fecha painel no mobile
     switchTab('list');
     if (window.innerWidth <= 900 && sidebarOpen) toggleSidebar();
     currentUC = null;
