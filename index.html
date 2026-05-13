@@ -1071,27 +1071,41 @@ function switchTab(tab) {
 }
 
 // ══════════════════════════════════════
-// REAL-TIME LOCATION
+// REAL-TIME LOCATION (opcional, não bloqueia)
 // ══════════════════════════════════════
 function startLocation() {
-  if (!navigator.geolocation) return;
-  navigator.geolocation.watchPosition(pos => {
-    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
-    const txt = `Sua localização: ${lat.toFixed(5)}, ${lng.toFixed(5)} (±${Math.round(accuracy)}m)`;
-    document.getElementById('loc-txt').textContent = txt;
-    if (!userMarker) {
-      const userIcon = L.divIcon({
-        html: `<div style="width:16px;height:16px;border-radius:50%;background:#388bfd;border:3px solid #fff;box-shadow:0 0 8px #388bfd88"></div>`,
-        iconSize: [16,16], iconAnchor: [8,8], className: ''
-      });
-      userMarker = L.marker([lat, lng], { icon: userIcon, zIndexOffset: 999 }).addTo(map);
-      userMarker.bindTooltip('Você está aqui', { permanent: false });
-    } else {
-      userMarker.setLatLng([lat, lng]);
-    }
-  }, err => {
-    document.getElementById('loc-txt').textContent = 'Localização não disponível: ' + err.message;
-  }, { enableHighAccuracy: true, maximumAge: 5000 });
+  const bar = document.getElementById('loc-txt');
+  if (!navigator.geolocation) {
+    bar.textContent = 'Geolocalização não suportada neste dispositivo.';
+    return;
+  }
+  // Tenta obter localização silenciosamente, sem popup bloqueador
+  try {
+    navigator.geolocation.watchPosition(
+      pos => {
+        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+        bar.textContent = `📍 Sua localização: ${lat.toFixed(5)}, ${lng.toFixed(5)} (±${Math.round(accuracy)}m)`;
+        if (!userMarker) {
+          const userIcon = L.divIcon({
+            html: `<div style="width:16px;height:16px;border-radius:50%;background:#388bfd;border:3px solid #fff;box-shadow:0 0 8px #388bfd88"></div>`,
+            iconSize: [16,16], iconAnchor: [8,8], className: ''
+          });
+          userMarker = L.marker([lat, lng], { icon: userIcon, zIndexOffset: 999 }).addTo(map);
+          userMarker.bindTooltip('Você está aqui', { permanent: false });
+        } else {
+          userMarker.setLatLng([lat, lng]);
+        }
+      },
+      err => {
+        // Silencioso — só mostra mensagem discreta, não bloqueia nada
+        const msgs = {1:'Permissão negada.', 2:'Sinal indisponível.', 3:'Tempo esgotado.'};
+        bar.textContent = `📍 Localização desativada (${msgs[err.code] || 'erro'}) — app funcionando normalmente.`;
+      },
+      { enableHighAccuracy: false, maximumAge: 10000, timeout: 8000 }
+    );
+  } catch(e) {
+    bar.textContent = '📍 Localização não disponível — app funcionando normalmente.';
+  }
 }
 
 // ══════════════════════════════════════
