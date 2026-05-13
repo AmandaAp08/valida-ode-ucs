@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FieldCheck — Vistorias UC</title>
+
+<!-- Leaflet Map -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, onValue, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getStorage, ref as sRef, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCxoNBUTu_WOYZTXI-48CitzH3uRko9LGs",
+  authDomain: "acompanhamanutencoesln.firebaseapp.com",
+  databaseURL: "https://acompanhamanutencoesln-default-rtdb.firebaseio.com",
+  projectId: "acompanhamanutencoesln",
+  storageBucket: "acompanhamanutencoesln.firebasestorage.app",
+  messagingSenderId: "888565328572",
+  appId: "1:888565328572:web:8ddaef8a6e4f18edf3efe7"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const storage = getStorage(app);
+
+window._firebaseDB = db;
+window._firebaseStorage = storage;
+window._firebaseRef = ref;
+window._firebaseSRef = sRef;
+window._firebaseSet = set;
+window._firebaseGet = get;
+window._firebaseOnValue = onValue;
+window._firebaseUploadString = uploadString;
+window._firebaseGetDownloadURL = getDownloadURL;
+window._firebaseReady = true;
+window.dispatchEvent(new Event('firebase-ready'));
+</script>
+
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2230;
+    --border: #30363d;
+    --accent: #f0a500;
+    --accent2: #e05c00;
+    --green: #2ea043;
+    --red: #da3633;
+    --yellow: #d29922;
+    --blue: #388bfd;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    z-index: 1000;
+  }
+  header .logo {
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--accent);
+  }
+  header .logo span { color: var(--text); }
+  .header-stats {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+    font-size: 0.75rem;
+  }
+  .stat-chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  .stat-chip .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+  }
+  .dot-green { background: var(--green); }
+  .dot-red { background: var(--red); }
+  .dot-yellow { background: var(--yellow); }
+
+  /* ── LOCATION BAR ── */
+  #location-bar {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 16px;
+    font-size: 0.72rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  #location-bar .pulse {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; transform:scale(1); }
+    50% { opacity:.4; transform:scale(1.4); }
+  }
+
+  /* ── MAIN LAYOUT ── */
+  .main {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── MAP ── */
+  #map {
+    flex: 1;
+    z-index: 1;
+  }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    width: 360px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  /* TABS */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    transition: all .2s;
+  }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: rgba(240,165,0,.06);
+  }
+
+  /* PANEL CONTENT */
+  .panel { display: none; flex: 1; overflow-y: auto; padding: 14px; flex-direction: column; gap: 10px; }
+  .panel.active { display: flex; }
+
+  /* ── SEARCH ── */
+  .search-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    color: var(--text);
+    font-size: 0.83rem;
+    width: 100%;
+    outline: none;
+  }
+  .search-box:focus { border-color: var(--accent); }
+
+  /* ── UC CARDS LIST ── */
+  .uc-list { display: flex; flex-direction: column; gap: 6px; }
+  .uc-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: all .15s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .uc-card:hover { border-color: var(--accent); background: rgba(240,165,0,.05); }
+  .uc-card .status-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .uc-card .info { flex: 1; min-width: 0; }
+  .uc-card .inst { font-size: 0.78rem; font-weight: 700; color: var(--accent); }
+  .uc-card .bairro { font-size: 0.72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .uc-card .med { font-size: 0.68rem; color: var(--muted); font-family: monospace; }
+  .badge-ok { background: rgba(46,160,67,.2); color: #3fb950; font-size: 0.62rem; padding: 2px 7px; border-radius: 10px; font-weight: 700; white-space: nowrap; }
+  .badge-avaria { background: rgba(218,54,51,.2); color: #f85149; font-size: 0.62rem; padding: 2px 7px; border-radius: 10px; font-weight: 700; }
+  .badge-pending { background: rgba(139,148,158,.15); color: var(--muted); font-size: 0.62rem; padding: 2px 7px; border-radius: 10px; font-weight: 700; }
+
+  /* ── FORM PANEL ── */
+  .form-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+  }
+  .form-subtitle { font-size: 0.72rem; color: var(--muted); margin-bottom: 4px; }
+
+  label { font-size: 0.75rem; color: var(--muted); display: block; margin-bottom: 4px; }
+  .field { margin-bottom: 10px; }
+  .inp, select, textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 8px 10px;
+    font-size: 0.82rem;
+    outline: none;
+    font-family: inherit;
+  }
+  .inp:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  select option { background: var(--surface2); }
+  textarea { resize: vertical; min-height: 70px; }
+
+  .check-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .check-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+  .check-item:hover { border-color: var(--accent); }
+  .check-item input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+  .check-item .label-text { font-size: 0.8rem; flex: 1; }
+  .check-item .check-status { font-size: 0.7rem; color: var(--muted); }
+
+  /* Status selector */
+  .status-select-row {
+    display: flex;
+    gap: 6px;
+  }
+  .status-btn {
+    flex: 1;
+    padding: 8px;
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .status-btn.sel-ok { border-color: var(--green); background: rgba(46,160,67,.15); color: #3fb950; }
+  .status-btn.sel-avaria { border-color: var(--red); background: rgba(218,54,51,.15); color: #f85149; }
+  .status-btn.sel-pendente { border-color: var(--yellow); background: rgba(210,153,34,.15); color: #e3b341; }
+
+  /* Photo upload */
+  .photo-area {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s;
+    position: relative;
+  }
+  .photo-area:hover { border-color: var(--accent); }
+  .photo-area input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; }
+  .photo-area .icon { font-size: 1.6rem; margin-bottom: 4px; }
+  .photo-area .hint { font-size: 0.72rem; color: var(--muted); }
+
+  .photos-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .thumb-wrap { position: relative; }
+  .thumb-wrap img {
+    width: 72px; height: 72px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+  .thumb-wrap .del-photo {
+    position: absolute;
+    top: -4px; right: -4px;
+    background: var(--red);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 16px; height: 16px;
+    font-size: 0.6rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* BUTTONS */
+  .btn {
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    border: none;
+    font-size: 0.83rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .btn:hover { opacity: .85; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-danger  { background: var(--red); color: #fff; }
+  .btn-export  { background: var(--green); color: #fff; }
+  .btn-sm { padding: 6px 12px; font-size: 0.75rem; }
+
+  /* EXPORT PANEL */
+  .export-info {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    font-size: 0.78rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .export-info strong { color: var(--text); }
+
+  /* NOTIF */
+  #notif {
+    position: fixed;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--green);
+    color: #fff;
+    padding: 10px 22px;
+    border-radius: 30px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    z-index: 9999;
+    transition: transform .3s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  #notif.show { transform: translateX(-50%) translateY(0); }
+  #notif.error { background: var(--red); }
+
+  /* LOADING */
+  #loading {
+    position: fixed; inset: 0;
+    background: rgba(13,17,23,.95);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 9999;
+    gap: 12px;
+  }
+  #loading .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading p { color: var(--muted); font-size: 0.85rem; }
+
+  /* Map popups */
+  .leaflet-popup-content-wrapper {
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    color: var(--text) !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,.5) !important;
+  }
+  .leaflet-popup-tip { background: var(--surface) !important; }
+  .popup-body { font-family: 'Segoe UI', sans-serif; }
+  .popup-inst { font-size: 1rem; font-weight: 800; color: var(--accent); margin-bottom: 4px; }
+  .popup-row { font-size: 0.75rem; color: var(--muted); margin-bottom: 2px; }
+  .popup-row span { color: var(--text); }
+  .popup-btn {
+    margin-top: 8px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+  }
+
+  /* Responsive */
+  @media (max-width: 700px) {
+    #sidebar { width: 100%; border-left: none; border-top: 1px solid var(--border); max-height: 55vh; }
+    .main { flex-direction: column; }
+    #map { flex: 0; height: 45vh; }
+    .header-stats { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <p>Conectando ao Firebase…</p>
+</div>
+
+<header>
+  <div class="logo">Field<span>Check</span></div>
+  <div style="font-size:.72rem;color:var(--muted)">Vistorias UC — Teresina/PI</div>
+  <div class="header-stats">
+    <div class="stat-chip"><div class="dot dot-green"></div><span id="cnt-ok">0</span> OK</div>
+    <div class="stat-chip"><div class="dot dot-red"></div><span id="cnt-avaria">0</span> Avaria</div>
+    <div class="stat-chip"><div class="dot dot-yellow"></div><span id="cnt-pend">0</span> Pendente</div>
+  </div>
+</header>
+
+<div id="location-bar">
+  <div class="pulse"></div>
+  <span id="loc-txt">Obtendo localização em tempo real…</span>
+</div>
+
+<div class="main">
+  <div id="map"></div>
+
+  <div id="sidebar">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('list')">📋 Unidades</div>
+      <div class="tab" onclick="switchTab('form')">🔧 Vistoria</div>
+      <div class="tab" onclick="switchTab('export')">📤 Exportar</div>
+    </div>
+
+    <!-- LIST PANEL -->
+    <div class="panel active" id="panel-list">
+      <input class="search-box" id="search-input" placeholder="🔍  Buscar instalação, bairro ou medidor…" oninput="filterList()">
+      <div id="filter-row" style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-sm" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="setFilter('all')">Todos</button>
+        <button class="btn btn-sm" style="flex:1;background:rgba(46,160,67,.15);border:1px solid var(--green);color:#3fb950" onclick="setFilter('ok')">✔ OK</button>
+        <button class="btn btn-sm" style="flex:1;background:rgba(218,54,51,.15);border:1px solid var(--red);color:#f85149" onclick="setFilter('avaria')">✖ Avaria</button>
+        <button class="btn btn-sm" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="setFilter('pendente')">⏳ Pend.</button>
+      </div>
+      <div class="uc-list" id="uc-list"></div>
+    </div>
+
+    <!-- FORM PANEL -->
+    <div class="panel" id="panel-form">
+      <div id="form-empty" style="color:var(--muted);font-size:.82rem;text-align:center;padding:40px 0">
+        Selecione uma UC no mapa ou na lista para iniciar a vistoria.
+      </div>
+      <div id="form-content" style="display:none;flex-direction:column;gap:10px">
+        <div class="form-title" id="form-title">UC — Instalação</div>
+        <div class="form-subtitle" id="form-subtitle"></div>
+
+        <!-- Prospector -->
+        <div class="field">
+          <label>👤 Prospector</label>
+          <input class="inp" id="f-prospector" placeholder="Seu nome completo">
+        </div>
+
+        <!-- Status final -->
+        <div class="field">
+          <label>📌 Status da Visita</label>
+          <div class="status-select-row">
+            <button class="status-btn" id="btn-ok" onclick="selectStatus('ok')">✔ OK</button>
+            <button class="status-btn" id="btn-avaria" onclick="selectStatus('avaria')">✖ Avaria</button>
+            <button class="status-btn" id="btn-pendente" onclick="selectStatus('pendente')">⏳ Pendente</button>
+          </div>
+        </div>
+
+        <!-- Checklist de fases -->
+        <div class="field">
+          <label>⚡ Verificação de Fases do Medidor</label>
+          <div class="check-row">
+            <label class="check-item">
+              <input type="checkbox" id="chk-fase-a"> <span class="label-text">Fase A — OK</span>
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="chk-fase-b"> <span class="label-text">Fase B — OK</span>
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="chk-fase-c"> <span class="label-text">Fase C — OK (trifásico)</span>
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="chk-neutro"> <span class="label-text">Neutro — OK</span>
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="chk-aterramento"> <span class="label-text">Aterramento — OK</span>
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="chk-lacre"> <span class="label-text">Lacre íntegro</span>
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="chk-caixa"> <span class="label-text">Caixa/invólucro sem danos</span>
+            </label>
+            <label class="check-item">
+              <input type="checkbox" id="chk-leitura"> <span class="label-text">Leitura visível</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Tipo de avaria -->
+        <div class="field" id="field-avaria" style="display:none">
+          <label>🔴 Tipo de Avaria</label>
+          <select id="f-tipo-avaria">
+            <option value="">Selecione…</option>
+            <option>Medidor sem leitura</option>
+            <option>Fase ausente / rompida</option>
+            <option>Caixa danificada / aberta</option>
+            <option>Lacre violado / ausente</option>
+            <option>Ligação irregular (gato)</option>
+            <option>Curto circuito</option>
+            <option>Neutro solto</option>
+            <option>Outro</option>
+          </select>
+        </div>
+
+        <!-- Observações -->
+        <div class="field">
+          <label>📝 Observações</label>
+          <textarea id="f-obs" placeholder="Descreva o que foi encontrado, condições do local, ações tomadas…"></textarea>
+        </div>
+
+        <!-- Leitura do medidor -->
+        <div class="field">
+          <label>🔢 Leitura do Medidor (kWh)</label>
+          <input class="inp" id="f-leitura" type="number" placeholder="Ex: 12345">
+        </div>
+
+        <!-- Fotos -->
+        <div class="field">
+          <label>📷 Fotos Anexadas</label>
+          <div class="photo-area">
+            <div class="icon">📷</div>
+            <div class="hint">Clique para selecionar fotos (múltiplas)</div>
+            <input type="file" id="f-photos" accept="image/*" multiple onchange="addPhotos(this)">
+          </div>
+          <div class="photos-preview" id="photos-preview"></div>
+        </div>
+
+        <!-- Salvar -->
+        <button class="btn btn-primary" onclick="saveVistoria()" id="btn-save">💾 Salvar Vistoria</button>
+        <div id="save-status" style="font-size:.72rem;color:var(--muted);text-align:center;min-height:16px"></div>
+      </div>
+    </div>
+
+    <!-- EXPORT PANEL -->
+    <div class="panel" id="panel-export">
+      <div class="export-info">
+        <strong>📊 Exportar base completa</strong><br><br>
+        Exporta todas as unidades consumidoras com seus respectivos status, dados de vistoria, prospector, fases verificadas e observações em formato <strong>CSV</strong> ou <strong>JSON</strong>.
+        <br><br>
+        Os dados são carregados em tempo real do Firebase, sempre atualizados.
+      </div>
+      <div id="export-summary" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-size:.78rem;line-height:1.8;"></div>
+      <button class="btn btn-export" onclick="exportCSV()">⬇ Exportar CSV</button>
+      <button class="btn" style="background:var(--blue);color:#fff" onclick="exportJSON()">⬇ Exportar JSON</button>
+    </div>
+  </div>
+</div>
+
+<div id="notif"></div>
+
+<script>
+// ══════════════════════════════════════
+// BASE DATA
+// ══════════════════════════════════════
+const BASE_UC = [
+  {instalacao:"10472304",municipio:"TERESINA",localidade:"TERESINA",bairro:"VALE QUEM TEM",medidor:"37100218284",lat:-5.046778,lng:-42.74568},
+  {instalacao:"6634796",municipio:"TERESINA",localidade:"TERESINA",bairro:"ANGELIM",medidor:"D097273",lat:-5.19064003,lng:-42.77752932},
+  {instalacao:"42633",municipio:"TERESINA",localidade:"TERESINA",bairro:"CENTRO",medidor:"D018981",lat:-5.090675,lng:-42.807851},
+  {instalacao:"2000095987",municipio:"TERESINA",localidade:"TERESINA",bairro:"AEROPORTO",medidor:"32010154820",lat:-5.06963149,lng:-42.82006471},
+  {instalacao:"11064170",municipio:"TERESINA",localidade:"TERESINA",bairro:"MOCAMBINHO",medidor:"37100217571",lat:-5.019267,lng:-42.802275},
+  {instalacao:"1057375",municipio:"TERESINA",localidade:"TERESINA",bairro:"ITARARE",medidor:"D139554",lat:-5.102427,lng:-42.752842},
+  {instalacao:"4866533",municipio:"TERESINA",localidade:"TERESINA",bairro:"VERMELHA",medidor:"ASH003725",lat:-5.118321,lng:-42.803521},
+  {instalacao:"7469128",municipio:"TERESINA",localidade:"TERESINA",bairro:"URBANO",medidor:"38020000497",lat:-5.065162,lng:-42.829296},
+  {instalacao:"2000142631",municipio:"TERESINA",localidade:"TERESINA",bairro:"AGUA MINERAL",medidor:"32010210002",lat:-5.04817819,lng:-42.81061741},
+  {instalacao:"2000049015",municipio:"TERESINA",localidade:"TERESINA",bairro:"CRISTO REI",medidor:"38110000542",lat:-5.12616613,lng:-42.79847682},
+  {instalacao:"387924",municipio:"TERESINA",localidade:"TERESINA",bairro:"SACI",medidor:"32010213150",lat:-5.138638,lng:-42.798464},
+  {instalacao:"367893",municipio:"TERESINA",localidade:"TERESINA",bairro:"PARQUE SAO JOAO",medidor:"D182085",lat:-5.130843,lng:-42.798495},
+  {instalacao:"7811527",municipio:"TERESINA",localidade:"TERESINA",bairro:"TABULETA",medidor:"37100099617",lat:-5.12008484,lng:-42.790216},
+  {instalacao:"4574966",municipio:"TERESINA",localidade:"TERESINA",bairro:"MATADOURO",medidor:"32020002904",lat:-5.063454,lng:-42.829783},
+  {instalacao:"7913770",municipio:"TERESINA",localidade:"TERESINA",bairro:"MORADA NOVA",medidor:"D215683",lat:-5.125393,lng:-42.786455},
+  {instalacao:"882690",municipio:"TERESINA",localidade:"TERESINA",bairro:"CENTRO",medidor:"38020008595",lat:-5.089075,lng:-42.816342},
+  {instalacao:"17010047",municipio:"TERESINA",localidade:"TERESINA",bairro:"SAMAPI",medidor:"D236995",lat:-5.055743,lng:-42.755153},
+  {instalacao:"715786",municipio:"TERESINA",localidade:"TERESINA",bairro:"ZONA RURAL",medidor:"37080118350",lat:-5.050063,lng:-42.685293},
+  {instalacao:"18500544",municipio:"TERESINA",localidade:"TERESINA",bairro:"URBANO",medidor:"37100248671",lat:-5.13501147,lng:-42.79790759},
+  {instalacao:"3847047",municipio:"TERESINA",localidade:"TERESINA",bairro:"LOURIVAL PARENTE",medidor:"D150271",lat:-5.139668,lng:-42.790767},
+  {instalacao:"10043128",municipio:"TERESINA",localidade:"TERESINA",bairro:"SAO JOAQUIM",medidor:"D236545",lat:-5.057793,lng:-42.833378},
+  {instalacao:"18841937",municipio:"TERESINA",localidade:"TERESINA",bairro:"ZONA RURAL",medidor:"37100125545",lat:-5.062939,lng:-42.640876},
+  {instalacao:"159",municipio:"TERESINA",localidade:"TERESINA",bairro:"TABULETA",medidor:"D183397",lat:-5.09574,lng:-42.816758},
+  {instalacao:"15850870",municipio:"TERESINA",localidade:"TERESINA",bairro:"PEDRA MOLE",medidor:"37100157250",lat:-5.017530,lng:-42.783709},
+  {instalacao:"684015",municipio:"TERESINA",localidade:"TERESINA",bairro:"SAO JOAQUIM",medidor:"D211595",lat:-5.052713,lng:-42.833453},
+  {instalacao:"10775447",municipio:"TERESINA",localidade:"TERESINA",bairro:"ININGA",medidor:"35010015985",lat:-5.066159,lng:-42.781117},
+  {instalacao:"5542740",municipio:"TERESINA",localidade:"TERESINA",bairro:"TRES ANDARES",medidor:"D179720",lat:-5.109434,lng:-42.784266},
+  {instalacao:"748706",municipio:"TERESINA",localidade:"TERESINA",bairro:"MEMORARE",medidor:"D235589",lat:-5.04631,lng:-42.816157},
+  {instalacao:"14880768",municipio:"TERESINA",localidade:"TERESINA",bairro:"ZONA RURAL",medidor:"35010097914",lat:-5.115317,lng:-42.68904},
+  {instalacao:"2000148989",municipio:"TERESINA",localidade:"TERESINA",bairro:"SANTO ANTONIO",medidor:"32010241811",lat:-5.16024194,lng:-42.77103371},
+  {instalacao:"11478136",municipio:"TERESINA",localidade:"TERESINA",bairro:"ININGA",medidor:"37100227305",lat:-5.063503,lng:-42.793318},
+  {instalacao:"7870450",municipio:"TERESINA",localidade:"TERESINA",bairro:"URBANO",medidor:"32110031156",lat:-5.08045,lng:-42.822882},
+  {instalacao:"1116126",municipio:"TERESINA",localidade:"TERESINA",bairro:"RENASCENCA I",medidor:"AHS003085",lat:-5.104149,lng:-42.739489},
+  {instalacao:"978736",municipio:"TERESINA",localidade:"TERESINA",bairro:"JOQUEI",medidor:"32010032902",lat:-5.074211,lng:-42.770296},
+  {instalacao:"5926840",municipio:"TERESINA",localidade:"TERESINA",bairro:"CENTRO",medidor:"D186562",lat:-5.089435,lng:-42.814975},
+  {instalacao:"186392",municipio:"TERESINA",localidade:"TERESINA",bairro:"TABULETA",medidor:"37030034032",lat:-5.111067,lng:-42.787103},
+  {instalacao:"3220109",municipio:"TERESINA",localidade:"TERESINA",bairro:"SAO CRISTOVAO",medidor:"D054144",lat:-5.08033591,lng:-42.77566744},
+  {instalacao:"3328465",municipio:"TERESINA",localidade:"TERESINA",bairro:"PROMORAR",medidor:"D134498",lat:-5.151567,lng:-42.786193},
+  {instalacao:"4744381",municipio:"TERESINA",localidade:"TERESINA",bairro:"ININGA",medidor:"D219156",lat:-5.065044,lng:-42.782665},
+  {instalacao:"16501314",municipio:"TERESINA",localidade:"TERESINA",bairro:"SANTA LUZIA",medidor:"37150013373",lat:-5.133164,lng:-42.809815},
+  {instalacao:"679879",municipio:"TERESINA",localidade:"TERESINA",bairro:"URBANO",medidor:"D169576",lat:-5.044547,lng:-42.83471},
+  {instalacao:"758175",municipio:"TERESINA",localidade:"TERESINA",bairro:"AGUA MINERAL",medidor:"37080024259",lat:-5.044388,lng:-42.807573},
+  {instalacao:"12928720",municipio:"TERESINA",localidade:"TERESINA",bairro:"URBANO",medidor:"38020004212",lat:-5.151922,lng:-42.795666},
+  {instalacao:"9234470",municipio:"TERESINA",localidade:"TERESINA",bairro:"MOCAMBINHO",medidor:"D235436",lat:-5.029673,lng:-42.815527},
+  {instalacao:"472255",municipio:"TERESINA",localidade:"TERESINA",bairro:"CENTRO",medidor:"37140000214",lat:-5.087362,lng:-42.809015},
+  {instalacao:"634867",municipio:"TERESINA",localidade:"TERESINA",bairro:"PIRAJA",medidor:"37100015898",lat:-5.070634,lng:-42.82458},
+  {instalacao:"4455126",municipio:"TERESINA",localidade:"TERESINA",bairro:"PIO XII",medidor:"32020073992",lat:-5.11203,lng:-42.80262},
+  {instalacao:"8670463",municipio:"TERESINA",localidade:"TERESINA",bairro:"SAO CRISTOVAO",medidor:"32010097257",lat:-5.082123,lng:-42.777815},
+  {instalacao:"2000166445",municipio:"TERESINA",localidade:"TERESINA",bairro:"PIRAJA",medidor:"32030019490",lat:-5.07404920,lng:-42.82714720},
+  {instalacao:"922099",municipio:"TERESINA",localidade:"TERESINA",bairro:"JOQUEI",medidor:"D193053",lat:-5.064717,lng:-42.793718},
+  {instalacao:"3593088",municipio:"TERESINA",localidade:"TERESINA",bairro:"PEDRA MOLE",medidor:"D201954",lat:-5.01664,lng:-42.778788},
+  {instalacao:"93785",municipio:"TERESINA",localidade:"TERESINA",bairro:"VERMELHA",medidor:"D187177",lat:-5.11701,lng:-42.80329},
+  {instalacao:"7422679",municipio:"TERESINA",localidade:"TERESINA",bairro:"ININGA",medidor:"D116892",lat:-5.052615,lng:-42.786872},
+  {instalacao:"9723439",municipio:"TERESINA",localidade:"TERESINA",bairro:"SAMAPI",medidor:"32010161699",lat:-5.051303,lng:-42.768195},
+  {instalacao:"582352",municipio:"TERESINA",localidade:"TERESINA",bairro:"AEROPORTO",medidor:"32020012640",lat:-5.065214,lng:-42.809849},
+  {instalacao:"8873798",municipio:"TERESINA",localidade:"TERESINA",bairro:"URBANO",medidor:"D129342",lat:-5.121683,lng:-42.800132},
+  {instalacao:"8442452",municipio:"TERESINA",localidade:"TERESINA",bairro:"HORTO FLORESTAL",medidor:"D100204",lat:-5.069688,lng:-42.775803},
+  {instalacao:"4034457",municipio:"TERESINA",localidade:"TERESINA",bairro:"TRES ANDARES",medidor:"D170887",lat:-5.115504,lng:-42.790801}
+];
+
+// ══════════════════════════════════════
+// STATE
+// ══════════════════════════════════════
+let vistorias = {}; // { instalacao: { status, obs, fases, ... } }
+let markers = {};
+let currentUC = null;
+let selectedStatus = null;
+let pendingPhotos = []; // base64 strings
+let currentFilter = 'all';
+let map = null;
+let userMarker = null;
+
+// ══════════════════════════════════════
+// INIT MAP
+// ══════════════════════════════════════
+function initMap() {
+  map = L.map('map', { zoomControl: true }).setView([-5.09, -42.80], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 19
+  }).addTo(map);
+  BASE_UC.forEach(uc => addMarker(uc));
+}
+
+function getMarkerColor(inst) {
+  const v = vistorias[inst];
+  if (!v) return '#8b949e';
+  if (v.status === 'ok') return '#2ea043';
+  if (v.status === 'avaria') return '#da3633';
+  if (v.status === 'pendente') return '#d29922';
+  return '#8b949e';
+}
+
+function makeIcon(color) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36">
+    <path d="M14 0C6.27 0 0 6.27 0 14c0 9.63 14 22 14 22s14-12.37 14-22C28 6.27 21.73 0 14 0z" fill="${color}" stroke="#000" stroke-width="1.5"/>
+    <circle cx="14" cy="14" r="6" fill="#fff" opacity=".9"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    iconSize: [28,36], iconAnchor: [14,36], popupAnchor: [0,-36],
+    className: ''
+  });
+}
+
+function addMarker(uc) {
+  const color = getMarkerColor(uc.instalacao);
+  const m = L.marker([uc.lat, uc.lng], { icon: makeIcon(color) }).addTo(map);
+  m.bindPopup(popupHTML(uc), { maxWidth: 240 });
+  m.on('click', () => openFormForUC(uc));
+  markers[uc.instalacao] = m;
+}
+
+function popupHTML(uc) {
+  const v = vistorias[uc.instalacao];
+  const statusLabel = v ? ({ok:'✔ OK', avaria:'✖ Avaria', pendente:'⏳ Pendente'}[v.status] || '—') : '⬜ Não visitado';
+  return `<div class="popup-body">
+    <div class="popup-inst">#${uc.instalacao}</div>
+    <div class="popup-row">Bairro: <span>${uc.bairro}</span></div>
+    <div class="popup-row">Medidor: <span>${uc.medidor}</span></div>
+    <div class="popup-row">Status: <span>${statusLabel}</span></div>
+    ${v && v.prospector ? `<div class="popup-row">Prospector: <span>${v.prospector}</span></div>` : ''}
+    <button class="popup-btn" onclick="openFormForUC(window._ucMap['${uc.instalacao}'])">🔧 Abrir Vistoria</button>
+  </div>`;
+}
+
+// ══════════════════════════════════════
+// FIREBASE SYNC
+// ══════════════════════════════════════
+function initFirebase() {
+  const db = window._firebaseDB;
+  const ref = window._firebaseRef;
+  const onValue = window._firebaseOnValue;
+
+  onValue(ref(db, 'vistorias'), snap => {
+    vistorias = snap.val() || {};
+    refreshAllMarkers();
+    renderList();
+    updateStats();
+    updateExportSummary();
+    if (currentUC) loadFormData(currentUC);
+    document.getElementById('loading').style.display = 'none';
+  });
+}
+
+function refreshAllMarkers() {
+  BASE_UC.forEach(uc => {
+    const m = markers[uc.instalacao];
+    if (m) {
+      const color = getMarkerColor(uc.instalacao);
+      m.setIcon(makeIcon(color));
+      m.setPopupContent(popupHTML(uc));
+    }
+  });
+}
+
+// ══════════════════════════════════════
+// UC LIST
+// ══════════════════════════════════════
+window._ucMap = {};
+BASE_UC.forEach(uc => window._ucMap[uc.instalacao] = uc);
+
+function setFilter(f) { currentFilter = f; renderList(); }
+
+function filterList() { renderList(); }
+
+function renderList() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const container = document.getElementById('uc-list');
+  const items = BASE_UC.filter(uc => {
+    const v = vistorias[uc.instalacao];
+    const st = v ? v.status : 'pendente';
+    if (currentFilter !== 'all' && st !== currentFilter) return false;
+    if (q) {
+      const hay = (uc.instalacao + uc.bairro + uc.medidor).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  container.innerHTML = items.map(uc => {
+    const v = vistorias[uc.instalacao];
+    const color = getMarkerColor(uc.instalacao);
+    const badge = v
+      ? ({ok:'<span class="badge-ok">✔ OK</span>', avaria:'<span class="badge-avaria">✖ Avaria</span>', pendente:'<span class="badge-pending">⏳ Pendente</span>'}[v.status] || '')
+      : '<span class="badge-pending">⬜ Não visitado</span>';
+    return `<div class="uc-card" onclick="openFormForUC(window._ucMap['${uc.instalacao}'])">
+      <div class="status-dot" style="background:${color}"></div>
+      <div class="info">
+        <div class="inst">#${uc.instalacao}</div>
+        <div class="bairro">${uc.bairro}${v && v.prospector ? ' · ' + v.prospector : ''}</div>
+        <div class="med">${uc.medidor}</div>
+      </div>
+      ${badge}
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════
+// STATS
+// ══════════════════════════════════════
+function updateStats() {
+  let ok = 0, avaria = 0, pend = 0;
+  BASE_UC.forEach(uc => {
+    const v = vistorias[uc.instalacao];
+    if (!v) pend++;
+    else if (v.status === 'ok') ok++;
+    else if (v.status === 'avaria') avaria++;
+    else pend++;
+  });
+  document.getElementById('cnt-ok').textContent = ok;
+  document.getElementById('cnt-avaria').textContent = avaria;
+  document.getElementById('cnt-pend').textContent = pend;
+}
+
+// ══════════════════════════════════════
+// FORM
+// ══════════════════════════════════════
+function openFormForUC(uc) {
+  currentUC = uc;
+  pendingPhotos = [];
+  document.getElementById('photos-preview').innerHTML = '';
+  selectedStatus = null;
+  switchTab('form');
+  document.getElementById('form-empty').style.display = 'none';
+  document.getElementById('form-content').style.display = 'flex';
+  document.getElementById('form-title').textContent = `UC #${uc.instalacao}`;
+  document.getElementById('form-subtitle').textContent = `${uc.bairro} · Medidor: ${uc.medidor}`;
+  loadFormData(uc);
+  map.setView([uc.lat, uc.lng], 15);
+}
+
+function loadFormData(uc) {
+  const v = vistorias[uc.instalacao];
+  if (!v) {
+    document.getElementById('f-prospector').value = '';
+    document.getElementById('f-obs').value = '';
+    document.getElementById('f-leitura').value = '';
+    selectStatus(null);
+    ['fase-a','fase-b','fase-c','neutro','aterramento','lacre','caixa','leitura'].forEach(k => {
+      document.getElementById('chk-'+k).checked = false;
+    });
+    return;
+  }
+  document.getElementById('f-prospector').value = v.prospector || '';
+  document.getElementById('f-obs').value = v.obs || '';
+  document.getElementById('f-leitura').value = v.leitura || '';
+  selectStatus(v.status || null);
+  const fases = v.fases || {};
+  ['fase-a','fase-b','fase-c','neutro','aterramento','lacre','caixa','leitura'].forEach(k => {
+    document.getElementById('chk-'+k).checked = !!fases[k.replace('-','')];
+  });
+  if (v.tipo_avaria) document.getElementById('f-tipo-avaria').value = v.tipo_avaria;
+  // show photos
+  if (v.fotos && v.fotos.length) {
+    const prev = document.getElementById('photos-preview');
+    prev.innerHTML = v.fotos.map((url, i) =>
+      `<div class="thumb-wrap"><img src="${url}" onerror="this.src='data:image/svg+xml,<svg xmlns=\\"http://www.w3.org/2000/svg\\" width=\\"72\\" height=\\"72\\"><rect width=\\"72\\" height=\\"72\\" fill=\\"%23333\\"/><text x=\\"36\\" y=\\"40\\" text-anchor=\\"middle\\" fill=\\"%23888\\" font-size=\\"10\\">Foto</text></svg>'"></div>`
+    ).join('');
+  }
+}
+
+function selectStatus(s) {
+  selectedStatus = s;
+  ['ok','avaria','pendente'].forEach(k => {
+    document.getElementById('btn-'+k).className = 'status-btn';
+  });
+  if (s === 'ok') document.getElementById('btn-ok').className = 'status-btn sel-ok';
+  if (s === 'avaria') document.getElementById('btn-avaria').className = 'status-btn sel-avaria';
+  if (s === 'pendente') document.getElementById('btn-pendente').className = 'status-btn sel-pendente';
+  document.getElementById('field-avaria').style.display = s === 'avaria' ? 'block' : 'none';
+}
+
+function addPhotos(input) {
+  const files = Array.from(input.files);
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      pendingPhotos.push(e.target.result);
+      renderPhotoPreview();
+    };
+    reader.readAsDataURL(file);
+  });
+  input.value = '';
+}
+
+function renderPhotoPreview() {
+  const prev = document.getElementById('photos-preview');
+  // keep existing saved thumbs (first child might be from DB)
+  const newThumbs = pendingPhotos.map((b64, i) =>
+    `<div class="thumb-wrap">
+      <img src="${b64}">
+      <button class="del-photo" onclick="removePhoto(${i})">✕</button>
+    </div>`
+  ).join('');
+  // Append new ones; find existing ones
+  const existing = prev.querySelectorAll('.thumb-wrap');
+  // Remove old pending (those with del button)
+  prev.querySelectorAll('.thumb-wrap button').forEach(b => b.closest('.thumb-wrap').remove());
+  prev.insertAdjacentHTML('beforeend', newThumbs);
+}
+
+function removePhoto(i) {
+  pendingPhotos.splice(i, 1);
+  renderPhotoPreview();
+}
+
+async function saveVistoria() {
+  if (!currentUC) return;
+  if (!selectedStatus) { showNotif('Selecione um status antes de salvar.', true); return; }
+
+  const btn = document.getElementById('btn-save');
+  btn.textContent = '⏳ Salvando…';
+  btn.disabled = true;
+  document.getElementById('save-status').textContent = '';
+
+  const fases = {};
+  ['fasea','faseb','fasec','neutro','aterramento','lacre','caixa','leitura'].forEach(k => {
+    const el = document.getElementById('chk-' + k.replace('fase','fase-').replace('aterr','aterr').replace('lacr','lacr').replace('caix','caix').replace('leit','leit'));
+    if (el) fases[k] = el.checked;
+  });
+  // rebuild properly
+  const faseMap = {
+    fasea: document.getElementById('chk-fase-a').checked,
+    faseb: document.getElementById('chk-fase-b').checked,
+    fasec: document.getElementById('chk-fase-c').checked,
+    neutro: document.getElementById('chk-neutro').checked,
+    aterramento: document.getElementById('chk-aterramento').checked,
+    lacre: document.getElementById('chk-lacre').checked,
+    caixa: document.getElementById('chk-caixa').checked,
+    leitura: document.getElementById('chk-leitura').checked,
+  };
+
+  // Upload photos to Firebase Storage
+  let fotoUrls = vistorias[currentUC.instalacao]?.fotos || [];
+  if (pendingPhotos.length > 0) {
+    try {
+      for (let i = 0; i < pendingPhotos.length; i++) {
+        const storage = window._firebaseStorage;
+        const sRef = window._firebaseSRef;
+        const uploadString = window._firebaseUploadString;
+        const getDownloadURL = window._firebaseGetDownloadURL;
+        const path = `vistorias/${currentUC.instalacao}/foto_${Date.now()}_${i}.jpg`;
+        const storageRef = sRef(storage, path);
+        const snap = await uploadString(storageRef, pendingPhotos[i], 'data_url');
+        const url = await getDownloadURL(snap.ref);
+        fotoUrls.push(url);
+      }
+    } catch(e) {
+      // If storage fails (permissions), store base64 inline (limited)
+      fotoUrls = [...fotoUrls, ...pendingPhotos];
+    }
+  }
+
+  const payload = {
+    instalacao: currentUC.instalacao,
+    bairro: currentUC.bairro,
+    medidor: currentUC.medidor,
+    municipio: currentUC.municipio,
+    lat: currentUC.lat,
+    lng: currentUC.lng,
+    status: selectedStatus,
+    prospector: document.getElementById('f-prospector').value.trim(),
+    obs: document.getElementById('f-obs').value.trim(),
+    leitura: document.getElementById('f-leitura').value.trim(),
+    tipo_avaria: selectedStatus === 'avaria' ? document.getElementById('f-tipo-avaria').value : '',
+    fases: faseMap,
+    fotos: fotoUrls,
+    data_visita: new Date().toLocaleString('pt-BR'),
+    timestamp: Date.now()
+  };
+
+  try {
+    const db = window._firebaseDB;
+    const ref = window._firebaseRef;
+    const set = window._firebaseSet;
+    await set(ref(db, `vistorias/${currentUC.instalacao}`), payload);
+    showNotif('✅ Vistoria salva com sucesso!');
+    pendingPhotos = [];
+  } catch(e) {
+    showNotif('Erro ao salvar: ' + e.message, true);
+  }
+
+  btn.textContent = '💾 Salvar Vistoria';
+  btn.disabled = false;
+}
+
+// ══════════════════════════════════════
+// EXPORT
+// ══════════════════════════════════════
+function updateExportSummary() {
+  let ok = 0, av = 0, pend = 0;
+  BASE_UC.forEach(uc => {
+    const v = vistorias[uc.instalacao];
+    if (!v) pend++;
+    else if (v.status === 'ok') ok++;
+    else if (v.status === 'avaria') av++;
+    else pend++;
+  });
+  document.getElementById('export-summary').innerHTML =
+    `<strong>Total de UCs:</strong> ${BASE_UC.length}<br>
+     <strong>✔ OK:</strong> ${ok} &nbsp; <strong>✖ Avaria:</strong> ${av} &nbsp; <strong>⏳ Pendente/Não visitado:</strong> ${pend}<br>
+     <strong>Cobertura:</strong> ${Math.round((ok+av)/BASE_UC.length*100)}% visitado`;
+}
+
+function exportCSV() {
+  const cols = ['INSTALACAO','MUNICIPIO','LOCALIDADE','BAIRRO','MEDIDOR','LATITUDE','LONGITUDE',
+    'STATUS','PROSPECTOR','DATA_VISITA','LEITURA_KWH','TIPO_AVARIA',
+    'FASE_A','FASE_B','FASE_C','NEUTRO','ATERRAMENTO','LACRE','CAIXA_OK','LEITURA_VISIVEL','OBSERVACOES'];
+  const rows = [cols.join(';')];
+  BASE_UC.forEach(uc => {
+    const v = vistorias[uc.instalacao] || {};
+    const f = v.fases || {};
+    rows.push([
+      uc.instalacao, uc.municipio, uc.localidade, uc.bairro, uc.medidor,
+      uc.lat, uc.lng,
+      v.status || 'nao_visitado',
+      v.prospector || '',
+      v.data_visita || '',
+      v.leitura || '',
+      v.tipo_avaria || '',
+      f.fasea ? 'SIM' : 'NAO',
+      f.faseb ? 'SIM' : 'NAO',
+      f.fasec ? 'SIM' : 'NAO',
+      f.neutro ? 'SIM' : 'NAO',
+      f.aterramento ? 'SIM' : 'NAO',
+      f.lacre ? 'SIM' : 'NAO',
+      f.caixa ? 'SIM' : 'NAO',
+      f.leitura ? 'SIM' : 'NAO',
+      (v.obs || '').replace(/;/g, ',').replace(/\n/g, ' ')
+    ].join(';'));
+  });
+  const blob = new Blob(['\ufeff' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `vistorias_UC_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`;
+  a.click();
+  showNotif('📥 CSV exportado!');
+}
+
+function exportJSON() {
+  const data = BASE_UC.map(uc => ({ ...uc, vistoria: vistorias[uc.instalacao] || null }));
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `vistorias_UC_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.json`;
+  a.click();
+  showNotif('📥 JSON exportado!');
+}
+
+// ══════════════════════════════════════
+// TABS
+// ══════════════════════════════════════
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    const names = ['list','form','export'];
+    t.classList.toggle('active', names[i] === tab);
+  });
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-'+tab).classList.add('active');
+  if (tab === 'export') { updateExportSummary(); }
+}
+
+// ══════════════════════════════════════
+// REAL-TIME LOCATION
+// ══════════════════════════════════════
+function startLocation() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(pos => {
+    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+    const txt = `Sua localização: ${lat.toFixed(5)}, ${lng.toFixed(5)} (±${Math.round(accuracy)}m)`;
+    document.getElementById('loc-txt').textContent = txt;
+    if (!userMarker) {
+      const userIcon = L.divIcon({
+        html: `<div style="width:16px;height:16px;border-radius:50%;background:#388bfd;border:3px solid #fff;box-shadow:0 0 8px #388bfd88"></div>`,
+        iconSize: [16,16], iconAnchor: [8,8], className: ''
+      });
+      userMarker = L.marker([lat, lng], { icon: userIcon, zIndexOffset: 999 }).addTo(map);
+      userMarker.bindTooltip('Você está aqui', { permanent: false });
+    } else {
+      userMarker.setLatLng([lat, lng]);
+    }
+  }, err => {
+    document.getElementById('loc-txt').textContent = 'Localização não disponível: ' + err.message;
+  }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+// ══════════════════════════════════════
+// NOTIF
+// ══════════════════════════════════════
+function showNotif(msg, error=false) {
+  const n = document.getElementById('notif');
+  n.textContent = msg;
+  n.className = error ? 'error show' : 'show';
+  setTimeout(() => n.className = error ? 'error' : '', 3000);
+}
+
+// ══════════════════════════════════════
+// BOOT
+// ══════════════════════════════════════
+window.addEventListener('firebase-ready', () => {
+  initMap();
+  initFirebase();
+  startLocation();
+  renderList();
+  updateStats();
+});
+
+// Fallback if firebase fires before listener
+if (window._firebaseReady) {
+  initMap();
+  initFirebase();
+  startLocation();
+  renderList();
+  updateStats();
+}
+</script>
+</body>
+</html>
